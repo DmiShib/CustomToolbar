@@ -1,20 +1,21 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using OpalStudio.CustomToolbar.Editor.ToolbarElements.Favorites.Data;
-using UnityEditor;
-using UnityEditor.SceneManagement;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-using Object = UnityEngine.Object;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements.Favorites.Window
+﻿namespace CustomToolbar.Editor.ToolbarElements.Favorites.Window
 {
+      using Data;
+      using System;
+      using System.Linq;
+      using UnityEditor;
+      using UnityEngine;
+      using System.Collections.Generic;
+      using UnityEditor.SceneManagement;
+      using UnityEngine.SceneManagement;
+      using Object = UnityEngine.Object;
+
+
       public sealed class FavoritesWindow : EditorWindow
       {
 #region Inner Classes
 
-            sealed private class CachedFavorite
+            private sealed class CachedFavorite
             {
                   public FavoriteItem SourceItem { get; set; }
                   public Object AssetObject { get; set; }

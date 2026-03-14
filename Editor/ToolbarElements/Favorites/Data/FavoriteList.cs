@@ -1,7 +1,8 @@
-﻿using System.Collections.Generic;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements.Favorites.Data
+﻿namespace CustomToolbar.Editor.ToolbarElements.Favorites.Data
 {
+      using System.Collections.Generic;
+
+
       [System.Serializable]
       public class FavoriteList
       {

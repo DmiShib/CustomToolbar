@@ -1,7 +1,8 @@
-﻿using UnityEditor;
-
-namespace OpalStudio.CustomToolbar.Editor.Utils
+﻿namespace CustomToolbar.Editor.Utils
 {
+      using UnityEditor;
+
+
       internal static class SerializeAssetsUtils
       {
             public static void ForceReserializeAllAssets()

@@ -1,171 +1,126 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using OpalStudio.CustomToolbar.Editor.Core;
-using UnityEditor;
-using UnityEditor.SceneManagement;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      sealed internal class ToolbarSceneSelection : BaseToolbarElement
-      {
-            private GUIContent _buttonContent;
-            private readonly List<string> _scenePaths = new();
-            private Dictionary<string, int> _buildSceneData;
+    using System.Linq;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
+    using System.Collections.Generic;
+    using UnityEditor.SceneManagement;
+    using UnityEngine.SceneManagement;
 
-            protected override string Name => "Scene Selection";
-            protected override string Tooltip => "Select a scene from the 'Assets/' folder.";
 
-            public override void OnInit()
+    internal sealed class ToolbarSceneSelection : BaseToolbarElement
+    {
+        public const string ID = "CustomToolbar/AllScenesSelection";
+
+        public static ToolbarSceneSelection Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Scene Selection";
+        protected override string Tooltip => "Select a scene from the 'Assets/' folder.";
+
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Middle)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        public override void OnInit()
+        {
+            EditorSceneManager.sceneOpened -= OnSceneChanged;
+            EditorSceneManager.sceneOpened += OnSceneChanged;
+        }
+
+        public override void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            SetEnabled(state == PlayModeStateChange.EnteredEditMode);
+        }
+
+        private void OnSceneChanged(Scene scene, OpenSceneMode mode)
+        {
+            RefreshButtonState();
+        }
+
+        protected override MainToolbarElement CreateElement()
+        {
+            var icon = EditorGUIUtility.IconContent("d_SceneAsset Icon").image as Texture2D;
+            var content = new MainToolbarContent(SceneManager.GetActiveScene().name, icon, Tooltip);
+
+            return new MainToolbarDropdown(content, BuildAndShowMenu);
+        }
+
+        private void RefreshButtonState()
+        {
+            if (RootElement != null)
             {
-                  this.Width = 120;
+                var icon = EditorGUIUtility.IconContent("d_SceneAsset Icon").image as Texture2D;
+                RootElement.content = new MainToolbarContent(SceneManager.GetActiveScene().name, icon, Tooltip);
+                RefreshUI();
+            }
+        }
 
-                  EditorSceneManager.sceneOpened -= OnSceneChanged;
-                  EditorSceneManager.sceneOpened += OnSceneChanged;
+        private void BuildAndShowMenu(Rect rect)
+        {
+            var menu = new GenericMenu();
+            var allSceneGuids = AssetDatabase.FindAssets("t:scene", new[] { "Assets" });
 
-                  EditorBuildSettings.sceneListChanged -= RefreshScenesList;
-                  EditorBuildSettings.sceneListChanged += RefreshScenesList;
+            if (allSceneGuids.Length == 0)
+            {
+                menu.AddDisabledItem(new GUIContent("No scenes found in project"));
+                menu.DropDown(rect);
 
-                  EditorApplication.projectChanged -= RefreshScenesList;
-                  EditorApplication.projectChanged += RefreshScenesList;
-
-                  RefreshScenesList();
-
-                  EditorApplication.update += ForceInitialRefresh;
+                return;
             }
 
-            private void ForceInitialRefresh()
+            var buildScenes = new List<(string path, int buildIndex)>();
+            var otherScenes = new List<string>();
+            var ignoredScenes = new HashSet<string> { "Basic", "Standard" };
+
+            var buildDict = EditorBuildSettings.scenes
+                .Select((s, i) => new { s.path, index = i })
+                .Where(x => !string.IsNullOrEmpty(x.path))
+                .ToDictionary(x => x.path, x => x.index);
+
+            foreach (var guid in allSceneGuids)
             {
-                  EditorApplication.update -= ForceInitialRefresh;
-                  RefreshScenesList();
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var sceneName = System.IO.Path.GetFileNameWithoutExtension(path);
+
+                if (ignoredScenes.Contains(sceneName) || !path.StartsWith("Assets/")) continue;
+
+                if (buildDict.TryGetValue(path, out var bIndex))
+                    buildScenes.Add((path, bIndex));
+                else
+                    otherScenes.Add(path);
             }
 
-            private void OnSceneChanged(Scene scene, OpenSceneMode mode) => RefreshScenesList();
+            buildScenes.Sort((a, b) => a.buildIndex.CompareTo(b.buildIndex));
+            otherScenes.Sort();
 
-            public override void OnDrawInToolbar()
+            foreach (var (path, buildIndex) in buildScenes)
             {
-                  using (new EditorGUI.DisabledScope(EditorApplication.isPlaying))
-                  {
-                        if (_buttonContent == null)
-                        {
-                              return;
-                        }
-
-                        if (EditorGUILayout.DropdownButton(_buttonContent, FocusType.Keyboard, ToolbarStyles.CommandPopupStyle, GUILayout.Width(this.Width)))
-                        {
-                              BuildSceneMenu().ShowAsContext();
-                        }
-                  }
+                var sceneName = System.IO.Path.GetFileNameWithoutExtension(path);
+                menu.AddItem(new GUIContent($"{sceneName}   [{buildIndex}]"), false, () => OpenScene(path));
             }
 
-            private GenericMenu BuildSceneMenu()
+            if (buildScenes.Count > 0 && otherScenes.Count > 0)
+                menu.AddSeparator("");
+
+            foreach (var path in otherScenes)
             {
-                  var menu = new GenericMenu();
-
-                  if (_scenePaths.Count == 0)
-                  {
-                        menu.AddDisabledItem(new GUIContent("No scenes found in project"));
-
-                        return menu;
-                  }
-
-                  var ignoredScenes = new List<string> { "Basic", "Standard" };
-                  var buildScenes = new List<(string path, int buildIndex)>();
-                  var otherScenes = new List<string>();
-
-                  foreach (string path in _scenePaths)
-                  {
-                        string sceneName = System.IO.Path.GetFileNameWithoutExtension(path);
-
-                        if (ignoredScenes.Contains(sceneName))
-                        {
-                              continue;
-                        }
-
-                        if (_buildSceneData.TryGetValue(path, out int buildIndex))
-                        {
-                              buildScenes.Add((path, buildIndex));
-                        }
-                        else
-                        {
-                              otherScenes.Add(path);
-                        }
-                  }
-
-                  buildScenes.Sort(static (a, b) => a.buildIndex.CompareTo(b.buildIndex));
-
-                  foreach ((string path, int buildIndex) in buildScenes)
-                  {
-                        string sceneName = System.IO.Path.GetFileNameWithoutExtension(path);
-                        string menuPath = $"{sceneName}   [{buildIndex}]";
-                        menu.AddItem(new GUIContent(menuPath), false, () => OpenScene(path));
-                  }
-
-                  if (buildScenes.Count > 0 && otherScenes.Count > 0)
-                  {
-                        menu.AddSeparator("");
-                  }
-
-                  foreach (string path in otherScenes)
-                  {
-                        string menuPath = path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase) ? path["Assets/".Length..] : path;
-                        menuPath = menuPath.EndsWith(".unity", StringComparison.OrdinalIgnoreCase) ? menuPath[..^".unity".Length] : menuPath;
-
-                        menu.AddItem(new GUIContent(menuPath), false, () => OpenScene(path));
-                  }
-
-                  return menu;
+                var menuPath = path.Replace("Assets/", "").Replace(".unity", "");
+                menu.AddItem(new GUIContent(menuPath), false, () => OpenScene(path));
             }
 
-            private void RefreshScenesList()
-            {
-                  _scenePaths.Clear();
+            menu.DropDown(rect);
+        }
 
-                  _buildSceneData = new Dictionary<string, int>();
+        private static void OpenScene(string path)
+        {
+            if (EditorApplication.isPlaying || !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+                return;
 
-                  for (int i = 0; i < EditorBuildSettings.scenes.Length; i++)
-                  {
-                        if (!string.IsNullOrEmpty(EditorBuildSettings.scenes[i].path))
-                        {
-                              _buildSceneData[EditorBuildSettings.scenes[i].path] = i;
-                        }
-                  }
-
-                  string[] allSceneGuids = AssetDatabase.FindAssets("t:scene", new[] { "Assets" });
-
-                  foreach (string guid in allSceneGuids)
-                  {
-                        string path = AssetDatabase.GUIDToAssetPath(guid);
-
-                        if (path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
-                        {
-                              _scenePaths.Add(path);
-                        }
-                  }
-
-                  _scenePaths.Sort(static (pathA, pathB) =>
-                  {
-                        int depthA = pathA.Count(static c => c == '/');
-                        int depthB = pathB.Count(static c => c == '/');
-
-                        return depthA != depthB ? depthA.CompareTo(depthB) : string.Compare(pathA, pathB, StringComparison.Ordinal);
-                  });
-
-                  Scene activeScene = SceneManager.GetActiveScene();
-                  Texture sceneIcon = EditorGUIUtility.IconContent("d_SceneAsset Icon").image;
-                  _buttonContent = new GUIContent(activeScene.name, sceneIcon, Tooltip);
-            }
-
-            private static void OpenScene(string path)
-            {
-                  if (EditorApplication.isPlaying || !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
-                  {
-                        return;
-                  }
-
-                  EditorSceneManager.OpenScene(path);
-            }
-      }
+            EditorSceneManager.OpenScene(path);
+        }
+    }
 }

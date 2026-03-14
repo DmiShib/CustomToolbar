@@ -1,33 +1,32 @@
-﻿using OpalStudio.CustomToolbar.Editor.Core;
-using OpalStudio.CustomToolbar.Editor.ToolbarElements.Favorites.Window;
-using UnityEditor;
-using UnityEngine;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements.Favorites
+﻿namespace CustomToolbar.Editor.ToolbarElements.Favorites
 {
-      sealed internal class ToolbarFavorites : BaseToolbarElement
-      {
-            private GUIContent buttonContent;
+    using Window;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
 
-            protected override string Name => "Favorites";
-            protected override string Tooltip => "Quick access to favorite assets and folders.";
 
-            public override void OnInit()
-            {
-                  Texture icon = EditorGUIUtility.IconContent("d_Favorite Icon").image;
+    internal sealed class ToolbarFavorites : BaseToolbarElement
+    {
+        public const string ID = "CustomToolbar/Favorites";
 
-                  buttonContent = new GUIContent(icon, this.Tooltip);
-            }
+        public static ToolbarFavorites Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Favorites";
+        protected override string Tooltip => "Quick access to favorite assets and folders.";
 
-            public override void OnDrawInToolbar()
-            {
-                  using (new EditorGUI.DisabledScope(!this.Enabled))
-                  {
-                        if (GUILayout.Button(buttonContent, ToolbarStyles.CommandButtonStyle, GUILayout.Width(this.Width)))
-                        {
-                              FavoritesWindow.ShowWindow();
-                        }
-                  }
-            }
-      }
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Right)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        protected override MainToolbarElement CreateElement()
+        {
+            var icon = EditorGUIUtility.IconContent("d_Favorite Icon").image as Texture2D;
+            var content = new MainToolbarContent(icon, Tooltip);
+            return new MainToolbarButton(content, FavoritesWindow.ShowWindow);
+        }
+    }
 }

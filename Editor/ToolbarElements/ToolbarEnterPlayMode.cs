@@ -1,85 +1,95 @@
-﻿using System;
-using System.Collections.Generic;
-using OpalStudio.CustomToolbar.Editor.Core;
-using UnityEditor;
-using UnityEngine;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      sealed internal class ToolbarEnterPlayMode : BaseToolbarElement
-      {
-            private List<(string name, EnterPlayModeOptions? value)> availableOptions;
-            private int selectedOptionIndex;
+    using System;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
+    using Modules.Shared.Helpers;
+    using System.Collections.Generic;
 
-            private GUIContent buttonContent;
 
-            protected override string Name => "Play Mode Options";
-            protected override string Tooltip => "Configure 'Enter Play Mode' settings for faster iteration (Domain/Scene Reload).";
+    internal sealed class ToolbarEnterPlayMode : BaseDropdownElement
+    {
+        public const string ID = "CustomToolbar/EnterPlayModeOptions";
+        public const string DEFAULT = "Default";
 
-            public override void OnInit()
+        private List<(string name, EnterPlayModeOptions? value)> _availableOptions;
+
+        public static ToolbarEnterPlayMode Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Play Mode Options";
+        protected override string Tooltip => "Configure 'Enter Play Mode' settings for faster iteration (Domain/Scene Reload).";
+        protected override float Width => 125f;
+
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Middle)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        public override void OnInit()
+        {
+            _availableOptions = new()
             {
-                  this.Width = 150;
-                  buttonContent = new GUIContent("", this.Tooltip);
+                (DEFAULT, null)
+            };
 
-                  if (availableOptions == null)
-                  {
-                        availableOptions = new List<(string name, EnterPlayModeOptions? value)>
-                        {
-                                    ("Default", null)
-                        };
+            foreach (var option in Enum<EnterPlayModeOptions>.GetValues())
+            {
+                var name = Enum<EnterPlayModeOptions>.GetName(option);
 
-                        foreach (EnterPlayModeOptions option in Enum.GetValues(typeof(EnterPlayModeOptions)))
-                        {
-                              if (option == EnterPlayModeOptions.None || option.ToString() == "DisableSceneBackupUnlessDirty")
-                              {
-                                    continue;
-                              }
+                if (option == EnterPlayModeOptions.None || name.Equals("DisableSceneBackupUnlessDirty", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-                              availableOptions.Add((option.ToString(), option));
-                        }
-                  }
+                _availableOptions.Add((name, option));
+            }
+        }
 
-                  selectedOptionIndex = EditorSettings.enterPlayModeOptionsEnabled
-                              ? availableOptions.FindIndex(static x => x.value == EditorSettings.enterPlayModeOptions)
-                              : 0;
+        protected override MainToolbarElement CreateElement()
+        {
+            return new MainToolbarDropdown(new MainToolbarContent(GetCurrentOptionName(), Tooltip), BuildMenu);
+        }
+
+        private string GetCurrentOptionName()
+        {
+            if (!EditorSettings.enterPlayModeOptionsEnabled)
+                return DEFAULT;
+
+            var current = EditorSettings.enterPlayModeOptions;
+            foreach (var option in _availableOptions)
+            {
+                if (option.value == current)
+                    return option.name;
             }
 
-            public override void OnDrawInToolbar()
+            return DEFAULT;
+        }
+
+        private void BuildMenu(Rect rect)
+        {
+            var menu = new GenericMenu();
+            var currentName = GetCurrentOptionName();
+
+            foreach (var option in _availableOptions)
             {
-                  if (selectedOptionIndex < 0 || selectedOptionIndex >= availableOptions.Count)
-                  {
-                        selectedOptionIndex = 0;
-                  }
+                menu.AddItem(new GUIContent(option.name), currentName == option.name, () =>
+                {
+                    if (option.value == null)
+                    {
+                        EditorSettings.enterPlayModeOptionsEnabled = false;
+                    }
+                    else
+                    {
+                        EditorSettings.enterPlayModeOptionsEnabled = true;
+                        EditorSettings.enterPlayModeOptions = option.value.Value;
+                    }
 
-                  buttonContent.text = availableOptions[selectedOptionIndex].name;
-
-                  if (EditorGUILayout.DropdownButton(buttonContent, FocusType.Keyboard, ToolbarStyles.CommandPopupStyle, GUILayout.Width(this.Width)))
-                  {
-                        var menu = new GenericMenu();
-
-                        for (int i = 0; i < availableOptions.Count; i++)
-                        {
-                              int index = i;
-                              (string name, EnterPlayModeOptions? value) option = availableOptions[index];
-
-                              menu.AddItem(new GUIContent(option.name), selectedOptionIndex == index, () =>
-                              {
-                                    selectedOptionIndex = index;
-
-                                    if (option.value == null)
-                                    {
-                                          EditorSettings.enterPlayModeOptionsEnabled = false;
-                                    }
-                                    else
-                                    {
-                                          EditorSettings.enterPlayModeOptionsEnabled = true;
-                                          EditorSettings.enterPlayModeOptions = option.value.Value;
-                                    }
-                              });
-                        }
-
-                        menu.ShowAsContext();
-                  }
+                    UpdateContentText(option.name);
+                });
             }
-      }
+
+            menu.DropDown(rect);
+        }
+    }
 }

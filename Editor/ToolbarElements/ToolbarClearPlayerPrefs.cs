@@ -1,30 +1,41 @@
-﻿using OpalStudio.CustomToolbar.Editor.Core;
-using UnityEditor;
-using UnityEngine;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      sealed internal class ToolbarClearPlayerPrefs : BaseToolbarElement
-      {
-            private GUIContent _buttonContent;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
 
-            protected override string Name => "Clear PlayerPrefs";
-            protected override string Tooltip => "Deletes all keys and values from PlayerPrefs. This cannot be undone.";
 
-            public override void OnInit()
+    internal sealed class ToolbarClearPlayerPrefs : BaseToolbarElement
+    {
+        public const string ID = "CustomToolbar/ClearPlayerPrefs";
+
+        public static ToolbarClearPlayerPrefs Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Clear PlayerPrefs";
+        protected override string Tooltip => "Deletes all keys and values from PlayerPrefs. This cannot be undone.";
+
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Right)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        protected override MainToolbarElement CreateElement()
+        {
+            Texture2D icon = EditorGUIUtility.IconContent("d_TreeEditor.Trash").image as Texture2D;
+            return new MainToolbarButton(new MainToolbarContent(icon, Tooltip), OnClicked);
+        }
+
+        private void OnClicked()
+        {
+            if (EditorUtility.DisplayDialog("Clear PlayerPrefs",
+                    "Are you sure you want to delete all PlayerPrefs? This action cannot be undone.",
+                    "Yes, delete them", "Cancel"))
             {
-                  Texture icon = EditorGUIUtility.IconContent("d_TreeEditor.Trash").image;
-                  _buttonContent = new GUIContent(icon, this.Tooltip);
+                PlayerPrefs.DeleteAll();
+                Debug.Log("[CustomToolbar] PlayerPrefs cleared successfully.");
             }
-
-            public override void OnDrawInToolbar()
-            {
-                  if (GUILayout.Button(_buttonContent, ToolbarStyles.CommandButtonStyle, GUILayout.Width(this.Width)) && EditorUtility.DisplayDialog("Clear PlayerPrefs",
-                                  "Are you sure you want to delete all PlayerPrefs? This action cannot be undone.", "Yes, delete them", "Cancel"))
-                  {
-                        PlayerPrefs.DeleteAll();
-                        Debug.Log("PlayerPrefs cleared successfully.");
-                  }
-            }
-      }
+        }
+    }
 }

@@ -1,67 +1,97 @@
-﻿using System;
-using UnityEditor;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      /// <summary>
-      /// The base contract for any element that can be displayed on the Custom Toolbar.
-      /// To create a new element, inherit from this class.
-      /// </summary>
-      public abstract class BaseToolbarElement : IComparable<BaseToolbarElement>
-      {
-            /// <summary>
-            /// The display name of the element in the settings UI.
-            /// </summary>
-            protected abstract string Name { get; }
+    using System;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
+    using UnityEngine.UIElements;
 
-            /// <summary>
-            /// The tooltip displayed when hovering over the element in the toolbar.
-            /// </summary>
-            protected virtual string Tooltip => string.Empty;
 
-            /// <summary>
-            /// Gets or sets a value indicating whether this element is enabled.
-            /// If false, the element will not be shown.
-            /// </summary>
-            protected bool Enabled { get; set; } = true;
+    public abstract class BaseToolbarElement : IComparable<BaseToolbarElement>
+    {
+        public const string PACKAGE_ROOT_PATH = "Assets/Modules/Shared/Plugins/CustomPackages/CustomToolbar";
 
-            /// <summary>
-            /// Gets or sets the width of the element in the toolbar, in pixels.
-            /// </summary>
-            protected float Width { get; set; } = 32;
+        public abstract string ElementId { get; }
+        protected abstract string Name { get; }
+        protected virtual string Tooltip => string.Empty;
+        protected virtual float Width => -1f;
 
-#region EventLoop
+        protected MainToolbarElement RootElement { get; private set; }
 
-            /// <summary>
-            /// One-time initialization logic for the element.
-            /// Called once when the editor starts. Use this to load icons, cache styles or setup width.
-            /// </summary>
-            public virtual void OnInit()
+
+        private void Init()
+        {
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            OnInit();
+        }
+
+        public virtual void OnInit() { }
+        public virtual void OnPlayModeStateChanged(PlayModeStateChange state) {}
+
+        protected abstract MainToolbarElement CreateElement();
+
+        public MainToolbarElement GetOrCreateElement()
+        {
+            Init();
+            RootElement = CreateElement();
+            TryApplyCustomStyle();
+            return RootElement;
+        }
+
+        protected void RefreshUI()
+        {
+            MainToolbar.Refresh(ElementId);
+            TryApplyCustomStyle();
+        }
+
+        protected void SetEnabled(bool isEnabled)
+        {
+            if (RootElement != null && RootElement.enabled != isEnabled)
             {
+                RootElement.enabled = isEnabled;
+                RefreshUI();
             }
+        }
 
-            /// <summary>
-            /// Called every time the play mode state changes (e.g., entering or exiting play mode).
-            /// Allows the element to change its behavior dynamically.
-            /// </summary>
-            public virtual void OnPlayModeStateChanged(PlayModeStateChange state)
+        protected void UpdateContentText(string newText)
+        {
+            if (RootElement != null)
             {
+                RootElement.content = new MainToolbarContent(newText, Tooltip);
+                RefreshUI();
             }
+        }
 
-#endregion
+        private void TryApplyCustomStyle()
+        {
+            if (Width <= 0)
+                return;
 
-#region Methods
-
-            /// <summary>
-            /// Defines how the element should be drawn in the main toolbar.
-            /// </summary>
-            public abstract void OnDrawInToolbar();
-
-#endregion
-
-            public int CompareTo(BaseToolbarElement other)
+            EditorApplication.delayCall += () =>
             {
-                  return string.Compare(this.Name, other.Name, StringComparison.Ordinal);
-            }
-      }
+                var windows = Resources.FindObjectsOfTypeAll<EditorWindow>();
+                foreach (var wnd in windows)
+                {
+                    if (wnd.GetType().Name == "MainToolbarWindow")
+                    {
+                        var rootOverlay = wnd.rootVisualElement?.Q(ElementId);
+                        if (rootOverlay != null)
+                            OnApplyCustomStyle(rootOverlay);
+                    }
+                }
+            };
+        }
+
+        protected virtual void OnApplyCustomStyle(VisualElement rootOverlay)
+        {
+            rootOverlay.style.width = Width;
+            rootOverlay.style.minWidth = Width;
+        }
+
+        public int CompareTo(BaseToolbarElement other)
+        {
+            return string.Compare(this.Name, other.Name, StringComparison.Ordinal);
+        }
+    }
 }

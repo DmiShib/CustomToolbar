@@ -1,11 +1,12 @@
-﻿using System;
-using UnityEditor;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-using Object = UnityEngine.Object;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements.Favorites.Data
+﻿namespace CustomToolbar.Editor.ToolbarElements.Favorites.Data
 {
+      using System;
+      using UnityEditor;
+      using UnityEngine;
+      using UnityEngine.SceneManagement;
+      using Object = UnityEngine.Object;
+
+
       [Serializable]
       public enum FavoriteItemType
       {

@@ -1,13 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using UnityEngine;
-using Debug = UnityEngine.Debug;
-
-namespace OpalStudio.CustomToolbar.Editor.Utils
+﻿namespace CustomToolbar.Editor.Utils
 {
+      using System;
+      using System.IO;
+      using System.Linq;
+      using UnityEngine;
+      using System.Diagnostics;
+      using Debug = UnityEngine.Debug;
+      using System.Collections.Generic;
+
+
       public static class GitUtils
       {
             private static bool? isGitInstalled;

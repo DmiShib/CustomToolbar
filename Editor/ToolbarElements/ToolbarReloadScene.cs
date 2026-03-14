@@ -1,39 +1,43 @@
-﻿using OpalStudio.CustomToolbar.Editor.Core;
-using UnityEditor;
-using UnityEngine;
-using UnityEngine.SceneManagement;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      sealed internal class ToolbarReloadScene : BaseToolbarElement
-      {
-            private static GUIContent buttonContent;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
+    using UnityEngine.SceneManagement;
 
-            protected override string Name => "Reload Scene";
-            protected override string Tooltip => "Reloads the currently active scene (only in Play Mode).";
 
-            public override void OnInit()
+    internal sealed class ToolbarReloadScene : BaseToolbarElement
+    {
+        public const string ID = "CustomToolbar/ReloadScene";
+
+        public static ToolbarReloadScene Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Reload Scene";
+        protected override string Tooltip => "Reloads the currently active scene (only in Play Mode).";
+
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Right)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        public override void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            SetEnabled(state == PlayModeStateChange.EnteredPlayMode);
+        }
+
+        protected override MainToolbarElement CreateElement()
+        {
+            Texture2D icon = EditorGUIUtility.IconContent("d_Refresh").image as Texture2D;
+
+            var button = new MainToolbarButton(new MainToolbarContent(icon, Tooltip), () =>
             {
-                  Texture icon = EditorGUIUtility.IconContent("d_Refresh").image;
-                  buttonContent = new GUIContent(icon, this.Tooltip);
+                SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+            });
 
-                  this.Enabled = false;
-            }
-
-            public override void OnPlayModeStateChanged(PlayModeStateChange state)
-            {
-                  this.Enabled = EditorApplication.isPlaying;
-            }
-
-            public override void OnDrawInToolbar()
-            {
-                  using (new EditorGUI.DisabledScope(!this.Enabled))
-                  {
-                        if (GUILayout.Button(buttonContent, ToolbarStyles.CommandButtonStyle, GUILayout.Width(this.Width)))
-                        {
-                              SceneManager.LoadScene(SceneManager.GetActiveScene().name);
-                        }
-                  }
-            }
-      }
+            button.enabled = EditorApplication.isPlaying;
+            return button;
+        }
+    }
 }

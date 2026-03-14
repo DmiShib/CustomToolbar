@@ -1,36 +1,44 @@
-﻿using OpalStudio.CustomToolbar.Editor.Core;
-using OpalStudio.CustomToolbar.Editor.Utils;
-using UnityEditor;
-using UnityEngine;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      sealed internal class ToolbarReserializeAll : BaseToolbarElement
-      {
-            private GUIContent buttonContent;
+    using Utils;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
 
-            protected override string Name => "Reserialize All Assets";
-            protected override string Tooltip => "Forces a re-serialization of all assets in the project. Useful after a Unity upgrade or to fix serialization errors.";
 
-            public override void OnInit()
+    internal sealed class ToolbarReserializeAll : BaseToolbarElement
+    {
+        public const string ID = "CustomToolbar/ReserializeAll";
+
+        public static ToolbarReserializeAll Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Reserialize All Assets";
+        protected override string Tooltip => "Forces a re-serialization of all assets in the project. Useful after a Unity upgrade or to fix serialization errors.";
+
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Right)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        public override void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            SetEnabled(state == PlayModeStateChange.EnteredEditMode);
+        }
+
+        protected override MainToolbarElement CreateElement()
+        {
+            Texture2D icon = EditorGUIUtility.IconContent("d_Refresh").image as Texture2D;
+
+            var button = new MainToolbarButton(new MainToolbarContent(icon, Tooltip), () =>
             {
-                  Texture icon = EditorGUIUtility.IconContent("d_Refresh").image;
+                Debug.Log("Starting to force reserialize all assets...");
+                SerializeAssetsUtils.ForceReserializeAllAssets();
+            });
 
-                  buttonContent = new GUIContent(icon, this.Tooltip);
-            }
-
-            public override void OnDrawInToolbar()
-            {
-                  this.Enabled = !EditorApplication.isPlayingOrWillChangePlaymode;
-
-                  using (new EditorGUI.DisabledScope(!this.Enabled))
-                  {
-                        if (GUILayout.Button(buttonContent, ToolbarStyles.CommandButtonStyle, GUILayout.Width(this.Width)))
-                        {
-                              Debug.Log("Starting to force reserialize all assets...");
-                              SerializeAssetsUtils.ForceReserializeAllAssets();
-                        }
-                  }
-            }
-      }
+            button.enabled = !EditorApplication.isPlayingOrWillChangePlaymode;
+            return button;
+        }
+    }
 }

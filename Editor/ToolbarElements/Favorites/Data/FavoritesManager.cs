@@ -1,9 +1,10 @@
-﻿using System.Collections.Generic;
-using UnityEditor;
-using UnityEngine;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements.Favorites.Data
+﻿namespace CustomToolbar.Editor.ToolbarElements.Favorites.Data
 {
+      using UnityEditor;
+      using UnityEngine;
+      using System.Collections.Generic;
+
+
       public sealed class FavoritesManager : ScriptableObject
       {
             public List<FavoriteList> allLists = new();

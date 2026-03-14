@@ -1,137 +1,136 @@
-﻿using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using OpalStudio.CustomToolbar.Editor.Core;
-using OpalStudio.CustomToolbar.Editor.Utils;
-using UnityEditor;
-using UnityEngine;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      sealed internal class ToolbarGitStatus : BaseToolbarElement
-      {
-            private GUIContent _buttonContent;
-            private string _rootRepoPath;
-            private List<string> _subRepoPaths;
-            private bool _isGitReady;
+    using Utils;
+    using System.IO;
+    using System.Linq;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
+    using System.Collections.Generic;
 
-            protected override string Name => "Git Status";
-            protected override string Tooltip => "View and switch Git branches. A '*' indicates uncommitted changes.";
 
-            public override void OnInit()
+    internal sealed class ToolbarGitStatus : BaseDropdownElement
+    {
+        public const string ID = "CustomToolbar/GitStatus";
+
+        private string _rootRepoPath;
+        private List<string> _subRepoPaths;
+        private bool _isGitReady;
+
+        public static ToolbarGitStatus Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Git Status";
+        protected override string Tooltip => "View and switch Git branches. A '*' indicates uncommitted changes.";
+
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Left)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        public override void OnInit()
+        {
+            EditorApplication.projectChanged -= OnProjectChanged;
+            EditorApplication.projectChanged += OnProjectChanged;
+        }
+
+        private void OnProjectChanged()
+        {
+            if (RootElement != null)
             {
-                  this.Width = 100;
-                  _buttonContent = new GUIContent();
-                  _isGitReady = GitUtils.IsGitInstalled;
-                  RefreshStatus();
+                RootElement.content = GetStatusContent();
+                RefreshUI();
+            }
+        }
 
-                  EditorApplication.projectChanged -= RefreshStatus;
-                  EditorApplication.projectChanged += RefreshStatus;
+        protected override MainToolbarElement CreateElement()
+        {
+            _isGitReady = GitUtils.IsGitInstalled;
+            var dropdown = new MainToolbarDropdown(GetStatusContent(), rect => BuildGitMenu().DropDown(rect));
+            dropdown.enabled = _isGitReady;
+            return dropdown;
+        }
+
+        private MainToolbarContent GetStatusContent()
+        {
+            _isGitReady = GitUtils.IsGitInstalled;
+
+            if (!_isGitReady)
+            {
+                Texture2D warnIcon = EditorGUIUtility.IconContent("console.warnicon.sml").image as Texture2D;
+                return new MainToolbarContent(" Git: N/A", warnIcon, "Git command not found. Is Git installed and in your system's PATH?");
             }
 
-            public override void OnDrawInToolbar()
+            List<string> allRepos = GitUtils.FindGitRepositories();
+            string projectRootPath = Directory.GetParent(Application.dataPath)?.FullName;
+
+            _rootRepoPath = allRepos.Find(p => p == projectRootPath);
+            _subRepoPaths = allRepos.Where(p => p != projectRootPath).ToList();
+
+            int totalRepos = _subRepoPaths.Count + (!string.IsNullOrEmpty(_rootRepoPath) ? 1 : 0);
+
+            if (totalRepos > 0)
             {
-                  using (new EditorGUI.DisabledScope(!_isGitReady))
-                  {
-                        if (EditorGUILayout.DropdownButton(_buttonContent, FocusType.Keyboard, ToolbarStyles.CommandPopupStyle, GUILayout.Width(this.Width)))
-                        {
-                              BuildGitMenu().ShowAsContext();
-                        }
-                  }
+                Texture2D connectedIcon = EditorGUIUtility.IconContent("d_CacheServerConnected").image as Texture2D;
+                return new MainToolbarContent($" Git: {totalRepos}", connectedIcon, $"{totalRepos} Git repositories found in the project.");
+            }
+            else
+            {
+                Texture2D disconnectedIcon = EditorGUIUtility.IconContent("d_CacheServerDisconnected").image as Texture2D;
+                return new MainToolbarContent("Git: (None)", disconnectedIcon, "No Git repository found in the project.");
+            }
+        }
+
+        private GenericMenu BuildGitMenu()
+        {
+            var menu = new GenericMenu();
+
+            if (!_isGitReady)
+            {
+                menu.AddDisabledItem(new GUIContent("Git not found on this system"));
+                return menu;
             }
 
-            private void RefreshStatus()
+            if (!string.IsNullOrEmpty(_rootRepoPath))
             {
-                  if (!_isGitReady)
-                  {
-                        _buttonContent.text = " Git: N/A";
-                        _buttonContent.image = EditorGUIUtility.IconContent("console.warnicon.sml").image;
-                        _buttonContent.tooltip = "Git command not found. Is Git installed and in your system's PATH?";
+                string currentBranch = GitUtils.GetCurrentBranch(_rootRepoPath);
+                List<string> allBranches = GitUtils.GetLocalBranches(_rootRepoPath);
+                bool isDirty = GitUtils.HasUncommittedChanges(_rootRepoPath);
 
-                        return;
-                  }
+                string rootMenuName = $"Unity{(isDirty ? "*" : "")}";
 
-                  List<string> allRepos = GitUtils.FindGitRepositories();
-                  string projectRootPath = Directory.GetParent(Application.dataPath)!.FullName;
-
-                  _rootRepoPath = allRepos.Find(p => p == projectRootPath);
-                  _subRepoPaths = allRepos.Where(p => p != projectRootPath).ToList();
-
-                  int totalRepos = _subRepoPaths.Count + (!string.IsNullOrEmpty(_rootRepoPath) ? 1 : 0);
-
-                  if (totalRepos > 0)
-                  {
-                        _buttonContent.text = $" Git: {totalRepos}";
-                        _buttonContent.image = EditorGUIUtility.IconContent("d_CacheServerConnected").image;
-                        _buttonContent.tooltip = $"{totalRepos} Git repositories found in the project.";
-                  }
-                  else
-                  {
-                        _buttonContent.text = "Git: (None)";
-                        _buttonContent.image = EditorGUIUtility.IconContent("d_CacheServerDisconnected").image;
-                        _buttonContent.tooltip = "No Git repository found in the project.";
-                  }
+                foreach (string branch in allBranches)
+                {
+                    menu.AddItem(new GUIContent($"{rootMenuName}/{branch}"), branch == currentBranch, () => GitUtils.SwitchBranch(_rootRepoPath, branch));
+                }
             }
 
-            private GenericMenu BuildGitMenu()
+            if (_subRepoPaths != null && _subRepoPaths.Any())
             {
-                  var menu = new GenericMenu();
+                if (!string.IsNullOrEmpty(_rootRepoPath)) menu.AddSeparator("");
 
-                  if (!_isGitReady)
-                  {
-                        menu.AddDisabledItem(new GUIContent("Git not found on this system"));
+                foreach (string repoPath in _subRepoPaths)
+                {
+                    string repoName = Path.GetFileName(repoPath);
+                    string currentBranch = GitUtils.GetCurrentBranch(repoPath);
+                    List<string> allBranches = GitUtils.GetLocalBranches(repoPath);
+                    bool isDirty = GitUtils.HasUncommittedChanges(repoPath);
 
-                        return menu;
-                  }
+                    if (!allBranches.Any()) continue;
 
-                  if (!string.IsNullOrEmpty(_rootRepoPath))
-                  {
-                        string currentBranch = GitUtils.GetCurrentBranch(_rootRepoPath);
-                        List<string> allBranches = GitUtils.GetLocalBranches(_rootRepoPath);
-                        bool isDirty = GitUtils.HasUncommittedChanges(_rootRepoPath);
-
-                        string rootMenuName = $"Unity{(isDirty ? "*" : "")}";
-
-                        foreach (string branch in allBranches)
-                        {
-                              menu.AddItem(new GUIContent($"{rootMenuName}/{branch}"), branch == currentBranch, () => GitUtils.SwitchBranch(_rootRepoPath, branch));
-                        }
-                  }
-
-                  if (_subRepoPaths.Any())
-                  {
-                        if (!string.IsNullOrEmpty(_rootRepoPath))
-                        {
-                              menu.AddSeparator("");
-                        }
-
-                        foreach (string repoPath in _subRepoPaths)
-                        {
-                              string repoName = Path.GetFileName(repoPath);
-                              string currentBranch = GitUtils.GetCurrentBranch(repoPath);
-                              List<string> allBranches = GitUtils.GetLocalBranches(repoPath);
-                              bool isDirty = GitUtils.HasUncommittedChanges(repoPath);
-
-                              if (!allBranches.Any())
-                              {
-                                    continue;
-                              }
-
-                              string repoMenuName = $"{repoName}{(isDirty ? "*" : "")}";
-
-                              foreach (string branch in allBranches)
-                              {
-                                    menu.AddItem(new GUIContent($"{repoMenuName}/{branch}"), branch == currentBranch, () => GitUtils.SwitchBranch(repoPath, branch));
-                              }
-                        }
-                  }
-
-                  if (menu.GetItemCount() == 0)
-                  {
-                        menu.AddDisabledItem(new GUIContent("No Git repository found"));
-                  }
-
-                  return menu;
+                    string repoMenuName = $"{repoName}{(isDirty ? "*" : "")}";
+                    foreach (string branch in allBranches)
+                    {
+                        menu.AddItem(new GUIContent($"{repoMenuName}/{branch}"), branch == currentBranch, () => GitUtils.SwitchBranch(repoPath, branch));
+                    }
+                }
             }
-      }
+
+            if (menu.GetItemCount() == 0)
+                menu.AddDisabledItem(new GUIContent("No Git repository found"));
+
+            return menu;
+        }
+    }
 }

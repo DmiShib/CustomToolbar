@@ -1,122 +1,89 @@
-﻿using OpalStudio.CustomToolbar.Editor.Core;
-using UnityEditor;
-using UnityEngine;
-
-namespace OpalStudio.CustomToolbar.Editor.ToolbarElements
+﻿namespace CustomToolbar.Editor.ToolbarElements
 {
-      sealed internal class ToolbarLayerVisibility : BaseToolbarElement
-      {
-            private GUIContent _buttonContent;
+    using UnityEditor;
+    using UnityEngine;
+    using UnityEditor.Toolbars;
 
-            protected override string Name => "Layer Visibility";
 
-            protected override string Tooltip => "Controls which layers are visible in the Scene View.";
+    internal sealed class ToolbarLayerVisibility : BaseDropdownElement
+    {
+        public const string ID = "CustomToolbar/LayerVisibility";
 
-            public override void OnInit()
+        public static ToolbarLayerVisibility Instance { get; } = new();
+        public override string ElementId => ID;
+        protected override string Name => "Layer Visibility";
+        protected override string Tooltip => "Controls which layers are visible in the Scene View.";
+
+
+        [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Right)]
+        public static MainToolbarElement Register()
+        {
+            return Instance.GetOrCreateElement();
+        }
+
+        protected override MainToolbarElement CreateElement()
+        {
+            Texture2D icon = EditorGUIUtility.IconContent("d_SceneLayersToggle").image as Texture2D;
+            var content = new MainToolbarContent("Layers", icon, Tooltip);
+
+            return new MainToolbarDropdown(content, rect => BuildLayerMenu().DropDown(rect));
+        }
+
+        private static GenericMenu BuildLayerMenu()
+        {
+            var menu = new GenericMenu();
+            int currentMask = Tools.visibleLayers;
+
+            var tagManager = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0]);
+            SerializedProperty layersProp = tagManager.FindProperty("layers");
+            bool hasIsolateItems = false;
+
+            for (int i = 0; i < 32; i++)
             {
-                  Texture icon = EditorGUIUtility.IconContent("d_SceneLayersToggle").image;
-                  _buttonContent = new GUIContent("Layers", icon, this.Tooltip);
+                string layerName = i <= 7 ? LayerMask.LayerToName(i) :
+                    (i < layersProp.arraySize ? layersProp.GetArrayElementAtIndex(i).stringValue : "");
 
-                  this.Width = 80;
+                if (!string.IsNullOrEmpty(layerName))
+                {
+                    int layerIndex = i;
+                    bool isVisible = (currentMask & (1 << i)) != 0;
+                    menu.AddItem(new GUIContent($"{layerName} (Layer {i})"), isVisible, () => Tools.visibleLayers ^= (1 << layerIndex));
+                    hasIsolateItems = true;
+                }
             }
 
-            public override void OnDrawInToolbar()
+            if (menu.GetItemCount() == 0)
             {
-                  if (EditorGUILayout.DropdownButton(_buttonContent, FocusType.Keyboard, ToolbarStyles.CommandPopupStyle, GUILayout.Width(this.Width)))
-                  {
-                        BuildLayerMenu().ShowAsContext();
-                  }
+                menu.AddDisabledItem(new GUIContent("No layers found"));
+                return menu;
             }
 
-            private static GenericMenu BuildLayerMenu()
+            menu.AddSeparator("");
+            menu.AddItem(new GUIContent("Show All"), false, () => Tools.visibleLayers = ~0);
+            menu.AddItem(new GUIContent("Hide All"), false, () => Tools.visibleLayers = 0);
+            menu.AddItem(new GUIContent("Invert Selection"), false, () => Tools.visibleLayers = ~Tools.visibleLayers);
+            menu.AddSeparator("");
+
+            if (!hasIsolateItems)
             {
-                  var menu = new GenericMenu();
-                  int currentMask = Tools.visibleLayers;
+                menu.AddDisabledItem(new GUIContent("Isolate/No layers available"));
+            }
+            else
+            {
+                for (int i = 0; i < 32; i++)
+                {
+                    string layerName = i <= 7 ? LayerMask.LayerToName(i) :
+                        (i < layersProp.arraySize ? layersProp.GetArrayElementAtIndex(i).stringValue : "");
 
-                  var tagManager = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset")[0]);
-                  SerializedProperty layersProp = tagManager.FindProperty("layers");
-
-                  for (int i = 0; i < 32; i++)
-                  {
-                        string layerName = "";
-
-                        if (i <= 7)
-                        {
-                              layerName = LayerMask.LayerToName(i);
-                        }
-                        else
-                        {
-                              if (i < layersProp.arraySize)
-                              {
-                                    SerializedProperty layerProp = layersProp.GetArrayElementAtIndex(i);
-                                    layerName = layerProp.stringValue;
-                              }
-                        }
-
-                        if (!string.IsNullOrEmpty(layerName))
-                        {
-                              bool isVisible = (currentMask & (1 << i)) != 0;
-                              int layerIndex = i;
-
-                              string menuItemName = $"{layerName} (Layer {i})";
-                              menu.AddItem(new GUIContent(menuItemName), isVisible, () => ToggleLayerVisibility(layerIndex));
-                        }
-                  }
-
-                  if (menu.GetItemCount() == 0)
-                  {
-                        menu.AddDisabledItem(new GUIContent("No layers found"));
-
-                        return menu;
-                  }
-
-                  menu.AddSeparator("");
-
-                  menu.AddItem(new GUIContent("Show All"), false, static () => Tools.visibleLayers = ~0);
-                  menu.AddItem(new GUIContent("Hide All"), false, static () => Tools.visibleLayers = 0);
-                  menu.AddItem(new GUIContent("Invert Selection"), false, static () => Tools.visibleLayers = ~Tools.visibleLayers);
-
-                  menu.AddSeparator("");
-
-                  bool hasIsolateItems = false;
-
-                  for (int i = 0; i < 32; i++)
-                  {
-                        string layerName = "";
-
-                        if (i <= 7)
-                        {
-                              layerName = LayerMask.LayerToName(i);
-                        }
-                        else
-                        {
-                              if (i < layersProp.arraySize)
-                              {
-                                    SerializedProperty layerProp = layersProp.GetArrayElementAtIndex(i);
-                                    layerName = layerProp.stringValue;
-                              }
-                        }
-
-                        if (!string.IsNullOrEmpty(layerName))
-                        {
-                              int layerIndex = i;
-                              string menuItemName = $"Isolate/{layerName} (Layer {i})";
-                              menu.AddItem(new GUIContent(menuItemName), false, () => { Tools.visibleLayers = (1 << layerIndex); });
-                              hasIsolateItems = true;
-                        }
-                  }
-
-                  if (!hasIsolateItems)
-                  {
-                        menu.AddDisabledItem(new GUIContent("Isolate/No layers available"));
-                  }
-
-                  return menu;
+                    if (!string.IsNullOrEmpty(layerName))
+                    {
+                        int layerIndex = i;
+                        menu.AddItem(new GUIContent($"Isolate/{layerName} (Layer {i})"), false, () => Tools.visibleLayers = (1 << layerIndex));
+                    }
+                }
             }
 
-            private static void ToggleLayerVisibility(int layer)
-            {
-                  Tools.visibleLayers ^= (1 << layer);
-            }
-      }
+            return menu;
+        }
+    }
 }
