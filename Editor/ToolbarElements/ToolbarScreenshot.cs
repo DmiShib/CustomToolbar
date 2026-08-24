@@ -2,6 +2,7 @@
 {
     using System;
     using System.IO;
+    using System.Linq;
     using UnityEditor;
     using UnityEngine;
     using UnityEditor.Toolbars;
@@ -12,11 +13,19 @@
     {
         public const string ID = "CustomToolbar/Screenshot";
         private const string SCREENSHOT_FOLDER_PATH = "Screenshots";
+        private const string TRANSPARENT_PREF_KEY = "CustomToolbar.Screenshot.Transparent";
 
         public static ToolbarScreenshot Instance { get; } = new();
         public override string ElementId => ID;
         protected override string Name => "Screenshot";
         protected override string Tooltip => "Screenshot options";
+
+        /// <summary>Save screenshots with alpha instead of an opaque background.</summary>
+        private static bool Transparent
+        {
+            get => EditorPrefs.GetBool(TRANSPARENT_PREF_KEY, false);
+            set => EditorPrefs.SetBool(TRANSPARENT_PREF_KEY, value);
+        }
 
 
         [MainToolbarElement(ID, defaultDockPosition = MainToolbarDockPosition.Right)]
@@ -37,6 +46,10 @@
         {
             var menu = new GenericMenu();
 
+            // --- Common Options ---
+            menu.AddItem(new GUIContent("Transparent Background"), Transparent, () => Transparent = !Transparent);
+            menu.AddSeparator("");
+
             // --- Game View Options ---
             menu.AddItem(new GUIContent("Capture Game View/Current Resolution"), false, () => CaptureGameView(1));
             menu.AddSeparator("Capture Game View/");
@@ -45,15 +58,9 @@
 
             // --- Scene View Options ---
             if (SceneView.lastActiveSceneView != null)
-            {
-                menu.AddItem(new GUIContent("Capture Scene View/Opaque Background"), false, () => CaptureSceneView(false));
-                menu.AddItem(new GUIContent("Capture Scene View/Transparent Background"), false, () => CaptureSceneView(true));
-            }
+                menu.AddItem(new GUIContent("Capture Scene View"), false, CaptureSceneView);
             else
-            {
-                menu.AddDisabledItem(new GUIContent("Capture Scene View/Opaque (No Scene View active)"));
-                menu.AddDisabledItem(new GUIContent("Capture Scene View/Transparent (No Scene View active)"));
-            }
+                menu.AddDisabledItem(new GUIContent("Capture Scene View (No Scene View active)"));
 
             menu.AddSeparator("");
             menu.AddItem(new GUIContent("Open Screenshots Folder"), false, OpenScreenshotsFolder);
@@ -69,6 +76,20 @@
 
         private static void CaptureGameView(int resolutionMultiplier)
         {
+            // ScreenCapture grabs the composited game view, it can never give us alpha.
+            if (Transparent)
+            {
+                var reference = GetGameCameras().FirstOrDefault();
+                if (reference == null)
+                {
+                    Debug.LogWarning("[CustomToolbar] Cannot capture Game View: no active camera.");
+                    return;
+                }
+
+                CaptureGameViewAtResolution(reference.pixelWidth * resolutionMultiplier, reference.pixelHeight * resolutionMultiplier);
+                return;
+            }
+
             EnsureFolderExists();
             var fullPath = GetUniqueScreenshotPath("GameView");
             ScreenCapture.CaptureScreenshot(fullPath, resolutionMultiplier);
@@ -77,37 +98,19 @@
 
         private static void CaptureGameViewAtResolution(int width, int height)
         {
-            var mainCamera = Camera.main;
-            if (mainCamera == null)
+            var cameras = GetGameCameras();
+            if (cameras.Length == 0)
             {
-                Debug.LogWarning("[CustomToolbar] Cannot capture Game View: no main camera.");
+                Debug.LogWarning("[CustomToolbar] Cannot capture Game View: no active camera.");
                 return;
             }
 
-            EnsureFolderExists();
-            var fullPath = GetUniqueScreenshotPath($"GameView_{width}x{height}");
-
-            var rt = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
-            var screenShot = new Texture2D(width, height, TextureFormat.ARGB32, false);
-
-            var prevTargetTexture = mainCamera.targetTexture;
-            mainCamera.targetTexture = rt;
-            mainCamera.Render();
-            mainCamera.targetTexture = prevTargetTexture;
-
-            RenderTexture.active = rt;
-            screenShot.ReadPixels(new Rect(0, 0, width, height), 0, 0);
-            screenShot.Apply();
-            RenderTexture.active = null;
-
-            File.WriteAllBytes(fullPath, screenShot.EncodeToPNG());
-
-            Object.DestroyImmediate(rt);
-            Object.DestroyImmediate(screenShot);
-            LogScreenshot(fullPath);
+            var suffix = Transparent ? "_Transparent" : string.Empty;
+            var fullPath = GetUniqueScreenshotPath($"GameView_{width}x{height}{suffix}");
+            RenderToFile(cameras, width, height, Transparent, fullPath);
         }
 
-        private static void CaptureSceneView(bool withTransparency)
+        private static void CaptureSceneView()
         {
             var sceneView = SceneView.lastActiveSceneView;
             if (sceneView == null) return;
@@ -117,40 +120,97 @@
             var tempCam = tempCamGo.AddComponent<Camera>();
             tempCam.CopyFrom(sceneView.camera);
 
-            var rt = new RenderTexture(sceneView.camera.pixelWidth, sceneView.camera.pixelHeight, 24, RenderTextureFormat.ARGB32);
-            var tex2D = new Texture2D(rt.width, rt.height, TextureFormat.ARGB32, false);
+            // Scene lighting adds an ambient wash that shows up in the alpha edges.
+            if (Transparent) sceneView.sceneLighting = false;
 
-            tempCam.targetTexture = rt;
-            if (withTransparency)
-            {
-                tempCam.clearFlags = CameraClearFlags.SolidColor;
-                tempCam.backgroundColor = new Color(0, 0, 0, 0);
-                sceneView.sceneLighting = false;
-            }
-            else
-            {
-                tempCam.clearFlags = sceneView.camera.clearFlags;
-                tempCam.backgroundColor = sceneView.camera.backgroundColor;
-            }
-
-            tempCam.Render();
-            RenderTexture.active = rt;
-            tex2D.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-            tex2D.Apply();
-            RenderTexture.active = null;
+            var suffix = Transparent ? "_Transparent" : "_Opaque";
+            var fullPath = GetUniqueScreenshotPath($"SceneView{suffix}");
+            RenderToFile(new[] { tempCam }, sceneView.camera.pixelWidth, sceneView.camera.pixelHeight, Transparent, fullPath);
 
             sceneView.sceneLighting = prevLighting;
             Object.DestroyImmediate(tempCamGo);
+        }
+
+        /// <summary>Active cameras that draw into the game view, in render order.</summary>
+        private static Camera[] GetGameCameras()
+        {
+            return Camera.allCameras
+                .Where(cam => cam.targetTexture == null)
+                .OrderBy(cam => cam.depth)
+                .ToArray();
+        }
+
+        /// <summary>Renders the cameras one by one into a shared target and writes it as PNG.</summary>
+        private static void RenderToFile(Camera[] cameras, int width, int height, bool transparent, string fullPath)
+        {
+            var rt = new RenderTexture(width, height, 24, RenderTextureFormat.ARGB32);
+            var tex2D = new Texture2D(width, height, TextureFormat.ARGB32, false);
+            var prevActive = RenderTexture.active;
+
+            try
+            {
+                // Cameras set to Depth only / Don't Clear never touch the target,
+                // so the background has to be prepared before the first render.
+                RenderTexture.active = rt;
+                GL.Clear(true, true, transparent ? Color.clear : Color.black);
+                RenderTexture.active = prevActive;
+
+                for (var i = 0; i < cameras.Length; i++)
+                    RenderCamera(cameras[i], rt, transparent, isFirst: i == 0);
+
+                RenderTexture.active = rt;
+                tex2D.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                tex2D.Apply();
+            }
+            finally
+            {
+                RenderTexture.active = prevActive;
+            }
 
             EnsureFolderExists();
-            var fileName = withTransparency ? "SceneView_Transparent" : "SceneView_Opaque";
-            var fullPath = GetUniqueScreenshotPath(fileName);
-
             File.WriteAllBytes(fullPath, tex2D.EncodeToPNG());
 
             Object.DestroyImmediate(tex2D);
             Object.DestroyImmediate(rt);
             LogScreenshot(fullPath);
+        }
+
+        private static void RenderCamera(Camera cam, RenderTexture target, bool transparent, bool isFirst)
+        {
+            var prevTarget = cam.targetTexture;
+            var prevClearFlags = cam.clearFlags;
+            var prevBackground = cam.backgroundColor;
+            var prevHdr = cam.allowHDR;
+
+            cam.targetTexture = target;
+
+            if (transparent)
+            {
+                // The HDR resolve blit writes alpha = 1, so an HDR camera never produces a transparent frame.
+                cam.allowHDR = false;
+
+                if (isFirst)
+                {
+                    cam.clearFlags = CameraClearFlags.SolidColor;
+                    cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
+                }
+                else if (cam.clearFlags is CameraClearFlags.Skybox or CameraClearFlags.SolidColor)
+                {
+                    // Stacked cameras must not overwrite what the previous ones already drew.
+                    cam.clearFlags = CameraClearFlags.Depth;
+                }
+            }
+            else
+            {
+                cam.backgroundColor = new Color(prevBackground.r, prevBackground.g, prevBackground.b, 1f);
+            }
+
+            cam.Render();
+
+            cam.targetTexture = prevTarget;
+            cam.clearFlags = prevClearFlags;
+            cam.backgroundColor = prevBackground;
+            cam.allowHDR = prevHdr;
         }
 
         private static void EnsureFolderExists()
